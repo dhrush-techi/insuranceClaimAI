@@ -1,0 +1,69 @@
+# -------------------------
+# Global
+# -------------------------
+*.log
+*.tmp
+*.cache
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Python Backend
+# -------------------------
+backend/venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.pylint.d/
+backend/.coverage
+backend/coverage.xml
+backend/.env
+backend/.env.local
+
+# FastAPI build artifacts
+backend/.ruff_cache/
+backend/.benchmarks/
+
+# -------------------------
+# Node Frontend (React + Vite)
+# -------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env
+frontend/.env.local
+frontend/npm-debug.log
+frontend/yarn-error.log
+
+# -------------------------
+# IDE / Editor
+# -------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -------------------------
+# OS Files
+# -------------------------
+.swp
+*.pid
+*.seed
+*.orig
+
+# -------------------------
+# Project Specific
+# -------------------------
+# Ignore uploaded files (if any folder exists)
+uploads/
+temp/
+data/
+reports/
+plots/*.png
+plots/*.jpg
+generated/
+
+# Matplotlib cache
+backend/matplotlibcache/
+

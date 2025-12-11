@@ -1,0 +1,50 @@
+APEX HEALTH INSURANCE
+Claims & Utilization Management Department
+PO Box 7721
+Hartford, CT 06101
+
+Date: October 20, 2025
+Claim #: CLM-99283-X
+Provider: Metro General Hospital / Dr. Sarah Vance
+Patient: John Doe
+Member ID: APX-8829102
+Group #: GRP-7741
+
+RE: NOTICE OF ADVERSE BENEFIT DETERMINATION
+
+Dear Mr. Doe,
+
+We have reviewed the claim submitted for the following service:
+
+Service: Left Knee Arthroscopy / Meniscectomy (CPT 29881)
+
+Date of Service: 10/14/2025
+
+Billed Amount: $14,500.00
+
+Determination: DENIED
+
+Reason for Denial:
+Based on the clinical information provided, this procedure has been determined to be Not Medically Necessary under the terms of your plan (Policy # P-2024-KNEE).
+
+Specifically, Apex Health Clinical Guidelines (Section 4.2: Arthroscopic Knee Surgery) require documentation of at least 12 consecutive weeks of failed conservative treatment prior to surgical intervention for a degenerative meniscal tear. Conservative treatment includes:
+
+Activity modification (Rest).
+
+NSAID pharmacological management.
+
+Doctor-supervised Physical Therapy.
+
+Your records indicate that while you completed 8 weeks of physical therapy, you did not meet the 12-week threshold required to rule out non-surgical recovery. Therefore, the criteria for surgical intervention were not met.
+
+Financial Responsibility:
+Because this service is denied as not medically necessary, you may be responsible for the full cost of the procedure if your provider has obtained a signed waiver of liability from you.
+Patient Responsibility Amount: $14,500.00
+
+Your Rights to Appeal:
+If you disagree with this decision, you have the right to file an internal appeal within 180 days of receipt of this notice. You may submit written comments, documents, or other information relevant to your claim.
+
+Sincerely,
+
+Dr. Gregory Houseman
+Medical Director, Apex Health Insurance
