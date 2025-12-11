@@ -67,3 +67,13 @@ generated/
 # Matplotlib cache
 backend/matplotlibcache/
 
+# Ignore SRS documents
+SRS*
+SRS/
+*.docx
+*.pdf
+*.txt
+
+# Ignore ALL node_modules anywhere in project
+node_modules/
+**/node_modules/
