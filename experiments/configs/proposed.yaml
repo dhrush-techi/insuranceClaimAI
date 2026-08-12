@@ -1,0 +1,14 @@
+experiments:
+  experiment_id: "proposed_system_001"
+  description: "Complete Glass-Box Evidence-Grounded AI Architecture"
+  pipeline:
+    ingestion_ocr: true
+    ner_analyzer: true
+    span_indexed_investigator: true
+    coverage_accumulator: true
+    akg_traceability_engine: true
+    confidence_calibrator: true
+    cot_reasoning_engine: true
+    adaptive_template_selector: true
+    guardrail_advocate: true
+    rag_chatbot: true

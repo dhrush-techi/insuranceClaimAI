@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import type { AppUser, UploadRecord } from "../types";
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8000";
+const backendUrl = import.meta.env.VITE_BACKEND_URL ;
 
 interface Props {
   user: AppUser;
@@ -64,7 +64,7 @@ export default function UploadSection({ user, onUploadComplete }: Props) {
           <label style={{ fontSize: "0.8rem", display: "block", marginBottom: 4 }}>Denial letter</label>
           <input
             className="input"
-            style={{ padding: 6 }}
+            style={{ padding: 6, color: "white", backgroundColor: "black"}}
             type="file"
             accept=".pdf,.doc,.docx,image/*,.txt"
             onChange={(e) => setDenialFile(e.target.files?.[0] ?? null)}
@@ -74,7 +74,7 @@ export default function UploadSection({ user, onUploadComplete }: Props) {
           <label style={{ fontSize: "0.8rem", display: "block", marginBottom: 4 }}>Medical report / EHR</label>
           <input
             className="input"
-            style={{ padding: 6 }}
+            style={{ padding: 6, color: "white", backgroundColor: "black" }}
             type="file"
             accept=".pdf,.doc,.docx,image/*,.txt"
             onChange={(e) => setMedicalFile(e.target.files?.[0] ?? null)}

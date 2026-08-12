@@ -1,0 +1,10 @@
+experiments:
+  experiment_id: "baseline_rag_001"
+  description: "Basic semantic RAG baseline without character span indexing or AKG"
+  retrieval:
+    type: "semantic_basic"
+    chunk_size: 500
+    span_indexing: false
+  generation:
+    unconstrained: false
+    citations: "document_level"

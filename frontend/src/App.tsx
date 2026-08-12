@@ -6,6 +6,7 @@ import AuthPage from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import EvaluationPage from "./pages/evaluation";
 import EmailConfirmed from "./pages/email-confirmed";
+import Creators from "./pages/creators"; 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export default function App() {
@@ -49,6 +50,8 @@ export default function App() {
         />
 
         <Route path="/email-confirmed" element={<EmailConfirmed />} />
+        
+        <Route path="/creators" element={<Creators />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

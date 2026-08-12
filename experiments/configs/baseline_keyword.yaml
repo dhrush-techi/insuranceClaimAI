@@ -1,0 +1,9 @@
+experiments:
+  experiment_id: "baseline_keyword_001"
+  description: "Keyword-based retrieval with static template generation"
+  retrieval:
+    type: "keyword"
+    keywords: ["failed", "severe", "pain", "cpt", "authorization"]
+  generation:
+    unconstrained: false
+    citations: "none"

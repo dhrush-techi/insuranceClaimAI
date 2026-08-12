@@ -1,108 +1,89 @@
 # backend/pipeline/reasoning.py
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Dict, List
+from dataclasses import dataclass, asdict
+from typing import Dict, List, Any, Optional
 
-from .evidence_accumulator import EvidenceAggregate
+from pipeline.evidence_accumulator import AccumulatedEvidence
 
 @dataclass
 class ReasoningResult:
     confidence_score: float
     decision: str  # AUTO_DRAFT / NEEDS_REVIEW / INCOMPLETE_EVIDENCE
     reasoning_summary: str
+    missing_elements: List[str]
+    contradictions: List[str]
+    supporting_evidence_ids: List[str]
 
 def reason_about_case(
     denial_category: str,
     denial_reason: str,
-    evidence_agg: EvidenceAggregate,
+    evidence_agg: AccumulatedEvidence,
 ) -> ReasoningResult:
-    # -------------------------------------------------------------------------
-    # 1. SCORING LOGIC (Preserved strictly for Evaluation Engine compatibility)
-    # -------------------------------------------------------------------------
-    base = 30.0 + evidence_agg.total_items * 3.0
-    base += evidence_agg.severity_score * 2.0
-    base += evidence_agg.failed_therapy_score * 3.0
-    base += evidence_agg.risk_score * 2.5
+    evidence_items = evidence_agg.deduplicated_items
+    total_items = len(evidence_items)
+    
+    missing_elements: List[str] = []
+    contradictions: List[str] = []
+    supporting_ids: List[str] = [e.evidence_id for e in evidence_items]
 
+    # Check for missing elements based on denial category
     c = denial_category.lower()
     if "medical necessity" in c:
-        base += evidence_agg.failed_therapy_score * 1.5
+        has_failed_therapy = any(e.evidence_type == "FAILED_THERAPY" for e in evidence_items)
+        has_severity = any(e.evidence_type == "SEVERITY" for e in evidence_items)
+        if not has_failed_therapy:
+            missing_elements.append("Lack of conservative treatment / failed therapy evidence")
+        if not has_severity:
+            missing_elements.append("Lack of documented symptom severity / mechanical symptoms")
+            
+        contradictions.append(
+            f"Insurer denied under '{denial_category}', but clinical documentation refutes the determination via {total_items} verified evidence spans."
+        )
+
     elif "authorization" in c:
-        base += evidence_agg.by_type.get("AUTH_REFERENCE", 0) * 5.0
+        has_auth = any(e.evidence_type == "AUTH_REFERENCE" for e in evidence_items)
+        if not has_auth:
+            missing_elements.append("Missing prior authorization reference number")
+        contradictions.append(
+            "Insurer claimed absence of prior authorization, refuting records show pre-service notification."
+        )
+
     elif "coding" in c:
-        base += evidence_agg.by_type.get("CODING_PROOF", 0) * 4.0
+        has_coding = any(e.evidence_type == "CODING_PROOF" for e in evidence_items)
+        if not has_coding:
+            missing_elements.append("Missing CPT modifier / ICD-10 cross-walk proof")
 
-    base = max(0.0, min(95.0, base))
+    base = 30.0 + total_items * 10.0 + (evidence_agg.coverage_depth * 40.0)
+    if missing_elements:
+        base -= len(missing_elements) * 10.0
 
-    if evidence_agg.total_items == 0:
+    score = max(0.0, min(95.0, base))
+
+    if total_items == 0:
         decision = "INCOMPLETE_EVIDENCE"
-    elif base >= 70:
+    elif score >= 70:
         decision = "AUTO_DRAFT"
-    elif base >= 45:
-        decision = "NEEDS_REVIEW"
     else:
-        decision = "INCOMPLETE_EVIDENCE"
+        decision = "NEEDS_REVIEW"
 
-    # -------------------------------------------------------------------------
-    # 2. ARGUMENT GENERATION (Enhanced for "Actual Letter" Quality)
-    # -------------------------------------------------------------------------
-    # We construct specific arguments based on the evidence found in Investigator.
-    arguments = []
-    
-    # Argument 1: Mechanical Symptoms / Exceptions
-    # Checks for "locking", "catching" in SEVERITY evidence (mapped in Investigator)
-    has_mechanical = (evidence_agg.severity_score > 1.5) # Heuristic threshold
-    if has_mechanical:
-        arguments.append(
-            "1. Policy Exception Met: Mechanical Symptoms Present\n"
-            "Clinical documentation confirms the patient exhibits 'locking', 'catching', and mechanical blocks "
-            "to motion. Standard clinical guidelines waive conservative therapy requirements when such "
-            "mechanical symptoms are present, as physical therapy cannot repair displaced tissue fragments."
-        )
+    summary_parts = [
+        f"Chain-of-Thought (CoT) Analysis for '{denial_category}' denial.",
+        f"Contradiction identified: {contradictions[0] if contradictions else 'None'}.",
+        f"Retrieved {total_items} refuting evidence items with Coverage Depth {evidence_agg.coverage_depth:.2f}."
+    ]
+    if missing_elements:
+        summary_parts.append(f"Gaps identified: {', '.join(missing_elements)}.")
 
-    # Argument 2: Timeline / Conservative Care
-    # Checks for FAILED_THERAPY evidence
-    if evidence_agg.failed_therapy_score > 0:
-        arguments.append(
-            "2. Conservative Treatment Timeline Met\n"
-            "The denial erroneously calculates the duration of conservative care."
-            "Medical records demonstrate a history of failed conservative management (including NSAIDs and "
-            "home exercise programs) that, when combined with formal PT, satisfies the insurer's timeline requirements."
-        )
+    reasoning_summary = " ".join(summary_parts)
 
-    # Argument 3: Standard of Care / Risk
-    # Checks for RISK evidence (chondromalacia, worsening)
-    if evidence_agg.risk_score > 0:
-        arguments.append(
-            "3. Prevention of Further Harm (Standard of Care)\n"
-            "Delaying surgical intervention places the patient at significant risk of further joint deterioration. "
-            "Operative findings (e.g., Chondromalacia) indicate that mechanical rubbing is already causing "
-            "permanent cartilage damage. Immediate intervention is the standard of care to prevent irreversible harm."
-        )
-
-    # Fallback if no specific arguments generated
-    if not arguments:
-        arguments.append(
-            "The clinical evidence provided overwhelmingly supports the medical necessity of this procedure "
-            "and contradicts the denial reason provided."
-        )
-
-    # Combine into the summary string which Advocate will use as the body
-    summary_text = "\n\n".join(arguments)
-    
-    # Append stats for internal logging (optional, keeps old format at bottom)
-    full_summary = (
-        f"{summary_text}\n\n"
-        f"--- Internal Metrics ---\n"
-        f"Base confidence: {base:.0f}%\n"
-        f"Severity: {evidence_agg.severity_score:.1f} | Risk: {evidence_agg.risk_score:.1f}"
+    return ReasoningResult(
+        confidence_score=score,
+        decision=decision,
+        reasoning_summary=reasoning_summary,
+        missing_elements=missing_elements,
+        contradictions=contradictions,
+        supporting_evidence_ids=supporting_ids,
     )
 
-    return ReasoningResult(confidence_score=base, decision=decision, reasoning_summary=full_summary)
-
-def to_json(rr: ReasoningResult) -> Dict:
-    return {
-        "confidence_score": rr.confidence_score,
-        "decision": rr.decision,
-        "reasoning_summary": rr.reasoning_summary,
-    }
+def to_json(rr: ReasoningResult) -> Dict[str, Any]:
+    return asdict(rr)

@@ -1,0 +1,406 @@
+{
+  "experiment_id": "experiment_001",
+  "timestamp": "2026-08-12T11:03:35.974114Z",
+  "status": "MEASURED RESULT",
+  "dataset_statistics": {
+    "total_cases": 16,
+    "auto_draft_count": 12,
+    "manual_review_count": 4
+  },
+  "component_results": {
+    "avg_ocr_quality": 0.9323,
+    "avg_coverage_depth": 0.7688,
+    "avg_calibrated_confidence": 0.7809,
+    "avg_traceability_rate": 0.9375,
+    "avg_grounded_rate": 0.2656,
+    "avg_hallucination_rate": 0.7344
+  },
+  "hallucination_analysis": {
+    "total_factual_claims": 260,
+    "grounded_claims": 59,
+    "unsupported_claims": 186,
+    "hallucination_rate": 0.7154
+  },
+  "latency_metrics_sec": {
+    "avg_ocr": 0.0002,
+    "avg_extraction": 0.0008,
+    "avg_retrieval": 0.0004,
+    "avg_graph": 0.0001,
+    "avg_generation": 0.0001,
+    "avg_end_to_end": 0.0016
+  },
+  "baseline_comparison": {
+    "baseline_1_keyword": {
+      "baseline_name": "Keyword-Based Baseline",
+      "analysis": {
+        "denial_reason_raw": "Empty document provided.",
+        "denial_category": "Administrative",
+        "insurer_name": null,
+        "denial_code": null,
+        "category_scores": {
+          "Administrative": 1.0
+        },
+        "entities": []
+      },
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nStandard keyword-matched appeal.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\n\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    },
+    "baseline_2_rag": {
+      "baseline_name": "Basic Semantic RAG Baseline",
+      "analysis": {
+        "denial_reason_raw": "Empty document provided.",
+        "denial_category": "Administrative",
+        "insurer_name": null,
+        "denial_code": null,
+        "category_scores": {
+          "Administrative": 1.0
+        },
+        "entities": []
+      },
+      "evidence_count": 0,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nBasic RAG generated appeal without character-span citations.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\n\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    },
+    "baseline_3_llm": {
+      "baseline_name": "Generic LLM Baseline (Unconstrained)",
+      "analysis": {
+        "denial_reason_raw": "Empty document provided.",
+        "denial_category": "Administrative",
+        "insurer_name": null,
+        "denial_code": null,
+        "category_scores": {
+          "Administrative": 1.0
+        },
+        "entities": []
+      },
+      "evidence_count": 0,
+      "letter_text": "RE: Appeal for Denied Claim (Administrative)\n\nTo Insurer:\nThe patient underwent medically necessary procedures. Denial reason \"Empty document provided.\" is incorrect.\nPlease approve this claim immediately.\n\nSincerely,\nPhysician\n"
+    }
+  },
+  "ablation_study": {
+    "A": {
+      "ablation_id": "A",
+      "name": "Complete Proposed System",
+      "config": {
+        "ablation_id": "A",
+        "name": "Complete Proposed System",
+        "use_span_indexing": true,
+        "use_akg_graph": true,
+        "use_confidence_calibration": true,
+        "use_semantic_retrieval": true,
+        "use_guardrails": true
+      },
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "calibrated_score": 0.48,
+      "recommended_action": "MANUAL_REVIEW",
+      "has_akg_graph": true,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nChain-of-Thought (CoT) Analysis for 'Administrative' denial. Contradiction identified: None. Retrieved 0 refuting evidence items with Coverage Depth 0.00.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\nNo medical text available for evidence discovery.\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    },
+    "B": {
+      "ablation_id": "B",
+      "name": "Without Span-Indexed Evidence",
+      "config": {
+        "ablation_id": "B",
+        "name": "Without Span-Indexed Evidence",
+        "use_span_indexing": false,
+        "use_akg_graph": true,
+        "use_confidence_calibration": true,
+        "use_semantic_retrieval": true,
+        "use_guardrails": true
+      },
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "calibrated_score": 0.48,
+      "recommended_action": "MANUAL_REVIEW",
+      "has_akg_graph": true,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nChain-of-Thought (CoT) Analysis for 'Administrative' denial. Contradiction identified: None. Retrieved 0 refuting evidence items with Coverage Depth 0.00.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\nNo medical text available for evidence discovery.\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    },
+    "C": {
+      "ablation_id": "C",
+      "name": "Without Appeal Knowledge Graph (AKG)",
+      "config": {
+        "ablation_id": "C",
+        "name": "Without Appeal Knowledge Graph (AKG)",
+        "use_span_indexing": true,
+        "use_akg_graph": false,
+        "use_confidence_calibration": true,
+        "use_semantic_retrieval": true,
+        "use_guardrails": true
+      },
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "calibrated_score": 0.48,
+      "recommended_action": "MANUAL_REVIEW",
+      "has_akg_graph": false,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nChain-of-Thought (CoT) Analysis for 'Administrative' denial. Contradiction identified: None. Retrieved 0 refuting evidence items with Coverage Depth 0.00.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\nNo medical text available for evidence discovery.\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    },
+    "D": {
+      "ablation_id": "D",
+      "name": "Without Confidence Calibration",
+      "config": {
+        "ablation_id": "D",
+        "name": "Without Confidence Calibration",
+        "use_span_indexing": true,
+        "use_akg_graph": true,
+        "use_confidence_calibration": false,
+        "use_semantic_retrieval": true,
+        "use_guardrails": true
+      },
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "calibrated_score": 0.48,
+      "recommended_action": "AUTO_DRAFT",
+      "has_akg_graph": true,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nChain-of-Thought (CoT) Analysis for 'Administrative' denial. Contradiction identified: None. Retrieved 0 refuting evidence items with Coverage Depth 0.00.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\nNo medical text available for evidence discovery.\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    },
+    "E": {
+      "ablation_id": "E",
+      "name": "Without Semantic Retrieval",
+      "config": {
+        "ablation_id": "E",
+        "name": "Without Semantic Retrieval",
+        "use_span_indexing": true,
+        "use_akg_graph": true,
+        "use_confidence_calibration": true,
+        "use_semantic_retrieval": false,
+        "use_guardrails": true
+      },
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "calibrated_score": 0.48,
+      "recommended_action": "MANUAL_REVIEW",
+      "has_akg_graph": true,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nChain-of-Thought (CoT) Analysis for 'Administrative' denial. Contradiction identified: None. Retrieved 0 refuting evidence items with Coverage Depth 0.00.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\nNo medical text available for evidence discovery.\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    },
+    "F": {
+      "ablation_id": "F",
+      "name": "Without Guardrails/Evidence Constraints",
+      "config": {
+        "ablation_id": "F",
+        "name": "Without Guardrails/Evidence Constraints",
+        "use_span_indexing": true,
+        "use_akg_graph": true,
+        "use_confidence_calibration": true,
+        "use_semantic_retrieval": true,
+        "use_guardrails": false
+      },
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "calibrated_score": 0.48,
+      "recommended_action": "MANUAL_REVIEW",
+      "has_akg_graph": true,
+      "letter_text": "RE: Formal Appeal for Denied Claim (Administrative)\nTarget Insurer: Health Plan Appeals Department\nBasis of Denial: Empty document provided.\n\nTo the Medical Review Board:\n\nThis letter serves as a formal evidence-grounded appeal regarding the adverse determination for the above-referenced claim. The claim was improperly denied under the rationale of \"Administrative\".\n\nCLINICAL REASONING AND REFUTATION:\nChain-of-Thought (CoT) Analysis for 'Administrative' denial. Contradiction identified: None. Retrieved 0 refuting evidence items with Coverage Depth 0.00.\n\nVERIFIABLE CLINICAL EVIDENCE:\nThe patient's objective medical records substantiate medical necessity and compliance with established standard of care guidelines:\n\nNo medical text available for evidence discovery.\n\nCONCLUSION AND REQUEST:\nBased on the span-indexed clinical facts cited above, the denial premise is demonstrably erroneous and refuted by the attached electronic health records. We request an immediate reversal of this denial and prompt authorization/reimbursement for the specified medical services.\n\nSincerely,\nAttending Physician & Patient Advocacy Team"
+    }
+  },
+  "per_case_evaluations": [
+    {
+      "case_id": "case_20251209074419147797",
+      "denial_category": "Administrative",
+      "ocr_quality": 0.0,
+      "evidence_count": 0,
+      "coverage_depth": 0.0,
+      "calibrated_score": 0.3,
+      "recommended_action": "MANUAL_REVIEW",
+      "traceability_rate": 0.0,
+      "grounded_rate": 0.0,
+      "hallucination_rate": 1.0,
+      "total_latency_sec": 0.0
+    },
+    {
+      "case_id": "case_20251209115758493634",
+      "denial_category": "Prior Authorization",
+      "ocr_quality": 1.0,
+      "evidence_count": 2,
+      "coverage_depth": 0.1681,
+      "calibrated_score": 0.4791,
+      "recommended_action": "MANUAL_REVIEW",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.0833,
+      "hallucination_rate": 0.9167,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251210041201674687",
+      "denial_category": "Administrative",
+      "ocr_quality": 1.0,
+      "evidence_count": 2,
+      "coverage_depth": 0.1349,
+      "calibrated_score": 0.5675,
+      "recommended_action": "MANUAL_REVIEW",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.0833,
+      "hallucination_rate": 0.9167,
+      "total_latency_sec": 0.001
+    },
+    {
+      "case_id": "case_20251210052822718679",
+      "denial_category": "Prior Authorization",
+      "ocr_quality": 1.0,
+      "evidence_count": 5,
+      "coverage_depth": 0.7635,
+      "calibrated_score": 0.7017,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.001
+    },
+    {
+      "case_id": "case_20251210063009040802",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.0025
+    },
+    {
+      "case_id": "case_20251210072109561284",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251210092604667017",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251210092822541058",
+      "denial_category": "Coding Error",
+      "ocr_quality": 1.0,
+      "evidence_count": 2,
+      "coverage_depth": 0.2337,
+      "calibrated_score": 0.6169,
+      "recommended_action": "MANUAL_REVIEW",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.0833,
+      "hallucination_rate": 0.9167,
+      "total_latency_sec": 0.001
+    },
+    {
+      "case_id": "case_20251211180415153722",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.001
+    },
+    {
+      "case_id": "case_20251211182339208132",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.001
+    },
+    {
+      "case_id": "case_20251211191307197336",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251212025243795912",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251212041534102910",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251212042346462149",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251217044257000182",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    },
+    {
+      "case_id": "case_20251224160253447230",
+      "denial_category": "Medical Necessity",
+      "ocr_quality": 0.9925,
+      "evidence_count": 8,
+      "coverage_depth": 1.0,
+      "calibrated_score": 0.8935,
+      "recommended_action": "AUTO_DRAFT",
+      "traceability_rate": 1.0,
+      "grounded_rate": 0.3333,
+      "hallucination_rate": 0.6667,
+      "total_latency_sec": 0.002
+    }
+  ]
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Dict, Any
 
-from .confidence_calibrator import CalibratedConfidence
+from pipeline.confidence_calibrator import CalibrationResult
 
 @dataclass
 class TemplateSelection:
@@ -13,7 +13,7 @@ class TemplateSelection:
 
 def select_template(
     denial_category: str,
-    confidence: CalibratedConfidence,
+    confidence: CalibrationResult,
 ) -> TemplateSelection:
     c = denial_category.lower()
     if "medical necessity" in c:
@@ -25,8 +25,6 @@ def select_template(
     else:
         template_id = "administrative"
 
-    # Tone and length adjustment by confidence bucket
-    # If we are highly confident (High Score), we use the "Assertive" (Legal/Demand) tone.
     if confidence.bucket == "HIGH":
         tone = "assertive"
         length = "detailed"

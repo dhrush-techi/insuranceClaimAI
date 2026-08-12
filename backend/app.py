@@ -2,7 +2,7 @@ from __future__ import annotations
 import io
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +13,7 @@ from config import UPLOAD_DIR
 from storage import (
     CaseRecord,
     save_case,
+    get_case_by_id,
     list_cases_for_user,
     list_all_cases,
     load_all_cases_from_disk,
@@ -20,7 +21,7 @@ from storage import (
     get_chat_history,
     append_feedback,
 )
-from pipeline.ocr import extract_text_from_file, normalize_text
+from pipeline.ocr import extract_text_from_file, normalize_text, ingest_document
 from pipeline.analyzer import analyze_denial_text, to_json as analyzer_to_json
 from pipeline.investigator import extract_evidence, to_json as investigator_to_json
 from pipeline.evidence_accumulator import accumulate_evidence, to_json as evidence_agg_to_json
@@ -29,18 +30,20 @@ from pipeline.confidence_calibrator import calibrate_confidence, to_json as conf
 from pipeline.adaptive_template import select_template, to_json as template_sel_to_json
 from pipeline.advocate import generate_letter, template_options_json, LetterDraft
 from pipeline.traceability import build_traceability_graph, to_json as trace_to_json
+from pipeline.chatbot import answer_case_query
 from pipeline import pattern_miner
 
 from evaluation_engine import evaluate_system
+from evaluation.runner import run_evaluation_suite, EVAL_OUTPUT_DIR
+import json
 
 from docx import Document
 from reportlab.pdfgen import canvas
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-app = FastAPI(title="Lighthouse AI Backend – Novel Pipeline")
+app = FastAPI(title="Lighthouse AI Backend – Medical Insurance Appeal System")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +56,10 @@ app.add_middleware(
 load_all_cases_from_disk()
 
 # ----------------- Pydantic Models --------------------------------------
+
+class CaseCreateRequest(BaseModel):
+    user_id: str
+    patient_identifier: Optional[str] = None
 
 class UploadResponse(BaseModel):
     id: str
@@ -69,12 +76,6 @@ class ChatRequest(BaseModel):
     user_id: str
     message: str
 
-class ChatMessage(BaseModel):
-    id: str
-    role: str
-    content: str
-    created_at: str
-
 class GenerateLetterRequest(BaseModel):
     user_id: str
     case_id: str
@@ -89,10 +90,8 @@ class FeedbackRequest(BaseModel):
     label: str  # 'up' or 'down'
     comment: Optional[str] = None
 
-class SimulateRequest(BaseModel):
-    user_id: str
-    case_id: str
-    hypothetical_evidence: str
+class EvaluationRunRequest(BaseModel):
+    experiment_id: str = "exp_001"
 
 # ----------------- Helpers ----------------------------------------------
 
@@ -100,10 +99,260 @@ def _safe_filename(prefix: str, original: str) -> str:
     ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     return f"{prefix}_{ts}_{(original or prefix).replace(' ', '_')}"
 
-# ----------------- Routes: Upload & Pipeline ----------------------------
+def _process_case_pipeline(case_record: CaseRecord, denial_path: Optional[Path], medical_path: Optional[Path]) -> CaseRecord:
+    # Phase 1: Ingestion & OCR
+    denial_ingest = ingest_document(denial_path, "doc_denial") if denial_path else None
+    medical_ingest = ingest_document(medical_path, "doc_medical") if medical_path else None
+
+    denial_text = denial_ingest.full_text if denial_ingest else ""
+    medical_text = medical_ingest.full_text if medical_ingest else ""
+    ocr_quality = medical_ingest.overall_ocr_quality if medical_ingest else 0.90
+
+    # Phase 2: Analyzer Agent
+    analysis = analyze_denial_text(denial_text)
+
+    # Phase 3: Investigator Agent
+    evidence_bundle = extract_evidence(
+        medical_text,
+        analysis.denial_category,
+        analysis.denial_reason_raw,
+        document_id=medical_ingest.document_id if medical_ingest else "doc_medical",
+        pages_data=[{"page_number": p.page_number, "char_start": p.char_start, "char_end": p.char_end} for p in (medical_ingest.pages if medical_ingest else [])]
+    )
+
+    # Phase 4: Evidence Accumulator
+    evidence_agg = accumulate_evidence(evidence_bundle)
+
+    # Phase 5 & 7: Reasoning Engine
+    reasoning = reason_about_case(
+        analysis.denial_category,
+        analysis.denial_reason_raw,
+        evidence_agg,
+    )
+
+    # Phase 6: Confidence Calibration
+    calibrated = calibrate_confidence(reasoning, evidence_agg, analysis, ocr_quality=ocr_quality)
+    pattern_miner.update_patterns_on_case(analysis.denial_category, reasoning)
+
+    # Phase 8: Adaptive Template Selection
+    template_sel = select_template(analysis.denial_category, calibrated)
+
+    # Phase 9: Advocate Agent (Auto-Draft if recommended)
+    letter: Optional[LetterDraft] = None
+    if calibrated.recommended_action == "AUTO_DRAFT":
+        letter = generate_letter(
+            template_id=template_sel.template_id,
+            denial_category=analysis.denial_category,
+            denial_reason=analysis.denial_reason_raw,
+            insurer_name=analysis.insurer_name,
+            evidence_snippets=evidence_bundle.summary,
+            reasoning_summary=reasoning.reasoning_summary,
+            evidence_items=[item.__dict__ for item in evidence_bundle.evidence_items],
+        )
+
+    # Phase 5: Traceability AKG
+    trace_graph = build_traceability_graph(case_record.id, analysis, evidence_bundle, reasoning, letter)
+
+    case_record.denial_category = analysis.denial_category
+    case_record.insurer_name = analysis.insurer_name
+    case_record.confidence_score = calibrated.calibrated_score
+    case_record.status = "processed"
+    case_record.denial_reason_raw = analysis.denial_reason_raw
+    case_record.reasoning_summary = reasoning.reasoning_summary
+    case_record.evidence_summary = evidence_bundle.summary
+    case_record.letter_text = letter.letter_text if letter else None
+    case_record.denial_text = denial_text
+    case_record.medical_text = medical_text
+
+    case_record.analyzer_output = analyzer_to_json(analysis)
+    case_record.investigator_output = investigator_to_json(evidence_bundle)
+    case_record.evidence_aggregate = evidence_agg_to_json(evidence_agg)
+    case_record.reasoning_output = reasoning_to_json(reasoning)
+    case_record.confidence_output = confidence_to_json(calibrated)
+    case_record.template_metadata = template_sel_to_json(template_sel)
+    case_record.trace_graph = trace_to_json(trace_graph)
+
+    save_case(case_record)
+    return case_record
+
+# ----------------- Required API Endpoints -------------------------------
+
+@app.post("/api/cases")
+async def create_case(req: CaseCreateRequest):
+    case_id = f"case_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
+    case_record = CaseRecord(
+        id=case_id,
+        user_id=req.user_id,
+        created_at=datetime.utcnow().isoformat() + "Z",
+        denial_filename=None,
+        medical_filename=None,
+        denial_category=None,
+        insurer_name=None,
+        confidence_score=None,
+        status="pending",
+        denial_reason_raw=None,
+        reasoning_summary=None,
+        evidence_summary=None,
+        letter_text=None,
+        denial_text="",
+        medical_text="",
+    )
+    save_case(case_record)
+    return {"case_id": case_id, "status": "created"}
+
+@app.post("/api/cases/{case_id}/documents")
+async def upload_case_documents(
+    case_id: str,
+    user_id: str = Form(...),
+    denial_letter: Optional[UploadFile] = File(None),
+    medical_record: Optional[UploadFile] = File(None),
+):
+    case = get_case_by_id(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    denial_path: Optional[Path] = None
+    medical_path: Optional[Path] = None
+
+    if denial_letter:
+        fn = _safe_filename("denial", denial_letter.filename)
+        denial_path = UPLOAD_DIR / fn
+        with open(denial_path, "wb") as f:
+            f.write(await denial_letter.read())
+        case.denial_filename = denial_letter.filename
+
+    if medical_record:
+        fn = _safe_filename("medical", medical_record.filename)
+        medical_path = UPLOAD_DIR / fn
+        with open(medical_path, "wb") as f:
+            f.write(await medical_record.read())
+        case.medical_filename = medical_record.filename
+
+    processed = _process_case_pipeline(case, denial_path, medical_path)
+    return UploadResponse(
+        id=processed.id,
+        user_id=processed.user_id,
+        created_at=processed.created_at,
+        denial_filename=processed.denial_filename,
+        medical_filename=processed.medical_filename,
+        denial_category=processed.denial_category,
+        insurer_name=processed.insurer_name,
+        confidence_score=processed.confidence_score,
+        status=processed.status,
+    )
+
+@app.post("/api/cases/{case_id}/process")
+async def process_case_endpoint(case_id: str):
+    case = get_case_by_id(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    return {"case_id": case_id, "status": case.status, "confidence_score": case.confidence_score}
+
+@app.get("/api/cases/{case_id}")
+async def get_case_details(case_id: str):
+    case = get_case_by_id(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    return case
+
+@app.get("/api/cases/{case_id}/analysis")
+async def get_case_analysis(case_id: str):
+    case = get_case_by_id(case_id)
+    if not case or not case.analyzer_output:
+        raise HTTPException(status_code=404, detail="Analysis not found for this case.")
+    return case.analyzer_output
+
+@app.get("/api/cases/{case_id}/evidence")
+async def get_case_evidence(case_id: str):
+    case = get_case_by_id(case_id)
+    if not case or not case.investigator_output:
+        raise HTTPException(status_code=404, detail="Evidence not found for this case.")
+    return case.investigator_output
+
+@app.get("/api/cases/{case_id}/graph")
+async def get_case_graph(case_id: str):
+    case = get_case_by_id(case_id)
+    if not case or not case.trace_graph:
+        raise HTTPException(status_code=404, detail="Graph not found for this case.")
+    return case.trace_graph
+
+@app.get("/api/cases/{case_id}/confidence")
+async def get_case_confidence(case_id: str):
+    case = get_case_by_id(case_id)
+    if not case or not case.confidence_output:
+        raise HTTPException(status_code=404, detail="Confidence calibration not found for this case.")
+    return case.confidence_output
+
+@app.get("/api/cases/{case_id}/appeal")
+async def get_case_appeal(case_id: str):
+    case = get_case_by_id(case_id)
+    if not case or not case.letter_text:
+        raise HTTPException(status_code=404, detail="Appeal letter draft not available for this case.")
+    return {"case_id": case_id, "letter_text": case.letter_text}
+
+@app.post("/api/cases/{case_id}/chat")
+async def chat_with_case(case_id: str, req: ChatRequest):
+    case = get_case_by_id(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    append_chat(req.user_id, "user", req.message)
+
+    inv_output = case.investigator_output or {}
+    evidence_raw = inv_output.get("evidence_items", [])
+    
+    from pipeline.investigator import EvidenceItem
+    evidence_items = [
+        EvidenceItem(
+            evidence_id=item["evidence_id"],
+            document_id=item.get("document_id", "doc_001"),
+            page=item.get("page", 1),
+            text=item["text"],
+            evidence_type=item["evidence_type"],
+            start_char=item.get("start_char", 0),
+            end_char=item.get("end_char", 0),
+            score=item.get("score", 0.80),
+            confidence=item.get("confidence", 0.80),
+        )
+        for item in evidence_raw
+    ]
+
+    res = answer_case_query(req.message, evidence_items, denial_category=case.denial_category)
+    append_chat(req.user_id, "assistant", res.answer)
+
+    return {
+        "reply": res.answer,
+        "citations": res.citations,
+        "confidence_score": res.confidence_score,
+    }
+
+# ----------------- Evaluation APIs --------------------------------------
+
+@app.post("/api/evaluation/run")
+async def run_evaluation_endpoint(req: EvaluationRunRequest):
+    report = run_evaluation_suite(req.experiment_id)
+    return report
+
+@app.get("/api/evaluation/results")
+async def get_evaluation_results(experiment_id: str = "exp_001"):
+    path = EVAL_OUTPUT_DIR / experiment_id / "aggregate_results.json"
+    if not path.exists():
+        return {
+            "experiment_id": experiment_id,
+            "status": "N/A — experiment not yet executed",
+            "message": "Run POST /api/evaluation/run first."
+        }
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+@app.get("/api/evaluation/report")
+async def get_evaluation_report():
+    return evaluate_system()
+
+# ----------------- Existing Direct Upload Endpoint ---------------------
 
 @app.post("/api/upload", response_model=UploadResponse)
-async def upload_case(
+async def upload_case_direct(
     user_id: str = Form(...),
     denial_letter: Optional[UploadFile] = File(None),
     medical_record: Optional[UploadFile] = File(None),
@@ -112,6 +361,24 @@ async def upload_case(
         raise HTTPException(status_code=400, detail="At least one file is required.")
 
     case_id = f"case_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
+    case = CaseRecord(
+        id=case_id,
+        user_id=user_id,
+        created_at=datetime.utcnow().isoformat() + "Z",
+        denial_filename=denial_letter.filename if denial_letter else None,
+        medical_filename=medical_record.filename if medical_record else None,
+        denial_category=None,
+        insurer_name=None,
+        confidence_score=None,
+        status="pending",
+        denial_reason_raw=None,
+        reasoning_summary=None,
+        evidence_summary=None,
+        letter_text=None,
+        denial_text="",
+        medical_text="",
+    )
+
     denial_path: Optional[Path] = None
     medical_path: Optional[Path] = None
 
@@ -127,359 +394,15 @@ async def upload_case(
         with open(medical_path, "wb") as f:
             f.write(await medical_record.read())
 
-    # Phase 1: OCR + normalization
-    denial_text = normalize_text(extract_text_from_file(denial_path)) if denial_path else ""
-    medical_text = normalize_text(extract_text_from_file(medical_path)) if medical_path else ""
-
-    # Phase 2: Analyzer
-    if not denial_text:
-        from pipeline.analyzer import DenialAnalysis
-        analysis = DenialAnalysis(
-            denial_reason_raw="Denial letter could not be parsed.",
-            denial_category="Administrative",
-            insurer_name=None,
-            denial_code=None,
-            category_scores={"Administrative": 1.0},
-        )
-    else:
-        analysis = analyze_denial_text(denial_text)
-
-    # Phase 3: Investigator
-    evidence_bundle = extract_evidence(medical_text, analysis.denial_category, analysis.denial_reason_raw)
-
-    # Phase 4: Evidence Accumulation
-    evidence_agg = accumulate_evidence(evidence_bundle)
-
-    # Phase 5: Reasoning Engine
-    reasoning = reason_about_case(
-        analysis.denial_category,
-        analysis.denial_reason_raw,
-        evidence_agg,
-    )
-
-    # Phase 6: Confidence Calibration
-    calibrated = calibrate_confidence(reasoning, evidence_agg, analysis)
-
-    # Track patterns for research metrics
-    pattern_miner.update_patterns_on_case(analysis.denial_category, reasoning)
-
-    # Phase 7: Adaptive Template Selection
-    template_sel = select_template(analysis.denial_category, calibrated)
-
-    # Phase 8: Advocate (auto-draft if recommended)
-    letter: LetterDraft | None = None
-    if calibrated.recommended_action == "AUTO_DRAFT":
-        letter = generate_letter(
-            template_id=template_sel.template_id,
-            denial_category=analysis.denial_category,
-            denial_reason=analysis.denial_reason_raw,
-            insurer_name=analysis.insurer_name,
-            evidence_snippets="\n".join([e.text for e in evidence_bundle.evidence_items][:40]),
-            reasoning_summary=reasoning.reasoning_summary,
-            tone=template_sel.tone,
-            length=template_sel.length,
-        )
-
-    # Phase 9: Traceability Graph
-    trace_graph = build_traceability_graph(case_id, analysis, evidence_bundle, reasoning, letter)
-
-    record = CaseRecord(
-        id=case_id,
-        user_id=user_id,
-        created_at=datetime.utcnow().isoformat() + "Z",
-        denial_filename=denial_letter.filename if denial_letter else None,
-        medical_filename=medical_record.filename if medical_record else None,
-        denial_category=analysis.denial_category,
-        insurer_name=analysis.insurer_name,
-        confidence_score=calibrated.calibrated_score,
-        status="processed",
-        denial_reason_raw=analysis.denial_reason_raw,
-        reasoning_summary=reasoning.reasoning_summary,
-        evidence_summary=evidence_bundle.summary,
-        letter_text=letter.letter_text if letter else None,
-        denial_text=denial_text,
-        medical_text=medical_text,
-        analyzer_output=analyzer_to_json(analysis),
-        investigator_output=investigator_to_json(evidence_bundle),
-        evidence_aggregate=evidence_agg_to_json(evidence_agg),
-        reasoning_output=reasoning_to_json(reasoning),
-        confidence_output=confidence_to_json(calibrated),
-        template_metadata=template_sel_to_json(template_sel),
-        trace_graph=trace_to_json(trace_graph),
-    )
-    save_case(record)
-
+    processed = _process_case_pipeline(case, denial_path, medical_path)
     return UploadResponse(
-        id=record.id,
-        user_id=record.user_id,
-        created_at=record.created_at,
-        denial_filename=record.denial_filename,
-        medical_filename=record.medical_filename,
-        denial_category=record.denial_category,
-        insurer_name=record.insurer_name,
-        confidence_score=record.confidence_score,
-        status=record.status,
+        id=processed.id,
+        user_id=processed.user_id,
+        created_at=processed.created_at,
+        denial_filename=processed.denial_filename,
+        medical_filename=processed.medical_filename,
+        denial_category=processed.denial_category,
+        insurer_name=processed.insurer_name,
+        confidence_score=processed.confidence_score,
+        status=processed.status,
     )
-
-
-# --- evaluation metrics --- 
-
-@app.get("/api/evaluation")
-def get_evaluation():
-    return evaluate_system()
-
-# ----------------- History & Templates ----------------------------------
-
-@app.get("/api/history")
-def get_history(user_id: str):
-    cases = list_cases_for_user(user_id)
-    return [
-        {
-            "id": c.id,
-            "user_id": c.user_id,
-            "created_at": c.created_at,
-            "denial_filename": c.denial_filename,
-            "medical_filename": c.medical_filename,
-            "denial_category": c.denial_category,
-            "insurer_name": c.insurer_name,
-            "confidence_score": c.confidence_score,
-            "status": c.status,
-        }
-        for c in cases
-    ]
-
-@app.get("/api/chat/history")
-def chat_history(user_id: str):
-    return get_chat_history(user_id)
-
-@app.get("/api/template-options")
-def template_options():
-    return template_options_json()
-
-# ----------------- Chatbot (using new artifacts) ------------------------
-
-@app.post("/api/chat", response_model=ChatMessage)
-def chat(req: ChatRequest):
-    append_chat(req.user_id, "user", req.message)
-    cases = list_cases_for_user(req.user_id)
-    latest = cases[0] if cases else None
-
-    if not latest:
-        answer = (
-            "You haven't uploaded any denial letters or medical records yet.\n\n"
-            "Please upload them so I can analyze the denial, extract evidence, and draft an appeal."
-        )
-    else:
-        q = req.message.lower()
-        denial = latest.analyzer_output or {}
-        evidence = latest.investigator_output or {}
-        confidence = latest.confidence_output or {}
-        reasoning = latest.reasoning_output or {}
-
-        if "why" in q and "denied" in q:
-            answer = (
-                f"Your claim was denied in the category {latest.denial_category}.\n\n"
-                f"🧾 Insurer: {latest.insurer_name or 'Not clearly specified'}\n"
-                f"📄 Exact denial reason:\n"
-                f"\"{latest.denial_reason_raw}\"\n\n"
-                f"Internal category scoring: {denial.get('category_scores', {})}"
-            )
-        elif "evidence" in q or "medical" in q:
-            ev_items = evidence.get("evidence_items", [])
-            if not ev_items:
-                answer = (
-                    "I could not find structured medical evidence that strongly supports this appeal.\n"
-                    "You may need additional clinical documentation (e.g., severity notes, failed prior therapies)."
-                )
-            else:
-                top = ev_items[:5]
-                lines = []
-                for e in top:
-                    lines.append(
-                        f"- [{e['evidence_type']}] {e['text']} "
-                        f"(confidence {e['confidence']:.2f})"
-                    )
-                answer = (
-                    "Here are key evidence snippets I found in your medical records:\n\n"
-                    + "\n".join(lines)
-                    + "\n\nThese were used to support the appeal reasoning."
-                )
-        elif "chance" in q or "success" in q or "appeal" in q:
-            score = confidence.get("calibrated_score", latest.confidence_score or 0)
-            bucket = confidence.get("bucket", "UNKNOWN")
-            decision = confidence.get("recommended_action", "NEEDS_REVIEW")
-            answer = (
-                f"Based on your documents, the calibrated success indication is {bucket}.\n\n"
-                f"📊 Calibrated Confidence Score: {score:.0f}%\n"
-                f"🧭 Recommended action: {decision}\n\n"
-                f"Reasoning summary:\n{latest.reasoning_summary}"
-            )
-        elif "graph" in q or "trace" in q or "explain" in q:
-            graph = latest.trace_graph or {}
-            n_nodes = len(graph.get("nodes", []))
-            n_edges = len(graph.get("edges", []))
-            answer = (
-                "I maintain a traceability graph for your case so that every appeal point can be linked "
-                "back to specific evidence.\n\n"
-                f"Current graph: **{n_nodes} nodes and {n_edges} edges.\n"
-                "Nodes include the denial case, evidence snippets, the reasoning engine, and the appeal letter."
-            )
-        else:
-            answer = (
-                "This is your private Lighthouse AI assistant.\n\n"
-                "You can ask things like:\n"
-                "• Why was my claim denied?\n"
-                "• What medical evidence supports my appeal?\n"
-                "• What is the success chance of my appeal?\n"
-                "• Show how the system traces evidence to the letter."
-            )
-
-    msg = append_chat(req.user_id, "bot", answer)
-    return ChatMessage(**msg)
-
-# ----------------- Letter Generation ------------------------------------
-
-@app.post("/api/generate-letter")
-def generate_letter_endpoint(req: GenerateLetterRequest):
-    cases = list_cases_for_user(req.user_id)
-    case = next((c for c in cases if c.id == req.case_id), None)
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-
-    t_id = req.template_id
-    letter = generate_letter(
-        template_id=t_id,
-        denial_category=case.denial_category or "",
-        denial_reason=case.denial_reason_raw or "",
-        insurer_name=case.insurer_name,
-        evidence_snippets=case.evidence_summary or "",
-        reasoning_summary=case.reasoning_summary or "",
-    )
-    content = letter.letter_text
-
-    fmt = req.format.lower()
-    if fmt == "txt":
-        return StreamingResponse(
-            io.BytesIO(content.encode("utf-8")),
-            media_type="text/plain",
-            headers={"Content-Disposition": "attachment; filename=appeal.txt"},
-        )
-    if fmt == "docx":
-        buffer = io.BytesIO()
-        doc = Document()
-        for line in content.splitlines():
-            doc.add_paragraph(line)
-        doc.save(buffer)
-        buffer.seek(0)
-        return StreamingResponse(
-            buffer,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": "attachment; filename=appeal.docx"},
-        )
-    if fmt == "pdf":
-        buffer = io.BytesIO()
-        p = canvas.Canvas(buffer)
-        text_obj = p.beginText(50, 800)
-        for line in content.splitlines():
-            text_obj.textLine(line)
-        p.drawText(text_obj)
-        p.showPage()
-        p.save()
-        buffer.seek(0)
-        return StreamingResponse(
-            buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=appeal.pdf"},
-        )
-    raise HTTPException(status_code=400, detail="Unsupported format")
-
-# ----------------- Feedback (Active Learning Hook) ----------------------
-
-@app.post("/api/feedback")
-def submit_feedback(req: FeedbackRequest):
-    entry = req.dict()
-    append_feedback(entry)
-    return {"status": "ok"}
-
-# ----------------- Simulation (What-If) ---------------------------------
-
-@app.post("/api/simulate")
-def simulate_case(req: SimulateRequest):
-    cases = list_cases_for_user(req.user_id)
-    case = next((c for c in cases if c.id == req.case_id), None)
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-
-    # Very simple: treat hypothetical evidence as extra severity/failed/risk text
-    from pipeline.evidence_accumulator import EvidenceAggregate
-    from pipeline.reasoning import reason_about_case
-    from pipeline.confidence_calibrator import calibrate_confidence
-    from pipeline.analyzer import DenialAnalysis
-
-    # Construct a fake EvidenceAggregate boost
-    base_agg_dict = case.evidence_aggregate or {}
-    agg = EvidenceAggregate(
-        total_items=base_agg_dict.get("total_items", 0) + 2,
-        by_type=base_agg_dict.get("by_type", {}),
-        avg_confidence=base_agg_dict.get("avg_confidence", 0.7),
-        severity_score=base_agg_dict.get("severity_score", 0.0) + 1.5,
-        failed_therapy_score=base_agg_dict.get("failed_therapy_score", 0.0) + 2.0,
-        risk_score=base_agg_dict.get("risk_score", 0.0) + 1.0,
-    )
-
-    analysis_dict = case.analyzer_output or {}
-    analysis = DenialAnalysis(
-        denial_reason_raw=analysis_dict.get("denial_reason_raw", case.denial_reason_raw or ""),
-        denial_category=analysis_dict.get("denial_category", case.denial_category or "Administrative"),
-        insurer_name=analysis_dict.get("insurer_name"),
-        denial_code=analysis_dict.get("denial_code"),
-        category_scores=analysis_dict.get("category_scores", {}),
-    )
-
-    reasoning = reason_about_case(analysis.denial_category, analysis.denial_reason_raw, agg)
-    calibrated = calibrate_confidence(reasoning, agg, analysis)
-
-    return {
-        "simulated_score": calibrated.calibrated_score,
-        "bucket": calibrated.bucket,
-        "recommended_action": calibrated.recommended_action,
-        "hypothetical_evidence": req.hypothetical_evidence,
-    }
-
-# ----------------- Analytics & Matplotlib Dashboard ---------------------
-
-@app.get("/api/analytics/summary")
-def analytics_summary():
-    metrics = pattern_miner.get_global_metrics()
-    cases = list_all_cases()
-    return {
-        "global_patterns": metrics,
-        "total_cases": len(cases),
-        "avg_confidence": (
-            sum((c.confidence_score or 0) for c in cases) / len(cases) if cases else 0.0
-        ),
-    }
-
-@app.get("/api/analytics/plot")
-def analytics_plot():
-    metrics = pattern_miner.get_global_metrics()
-    cats = list(metrics.get("categories", {}).keys())
-    counts = [metrics["categories"][c]["count"] for c in cats] if cats else []
-
-    fig, ax = plt.subplots()
-    if cats:
-        ax.bar(cats, counts)
-        ax.set_ylabel("Cases")
-        ax.set_xlabel("Denial Category")
-        ax.set_title("Cases per Denial Category")
-        plt.xticks(rotation=20, ha="right")
-    else:
-        ax.text(0.5, 0.5, "No data yet", ha="center", va="center")
-
-    buf = io.BytesIO()
-    fig.tight_layout()
-    fig.savefig(buf, format="png")
-    plt.close(fig)
-    buf.seek(0)
-
-    return StreamingResponse(buf, media_type="image/png")

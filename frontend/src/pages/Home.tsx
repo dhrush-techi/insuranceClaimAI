@@ -38,7 +38,7 @@ export default function Home({ user }: Props) {
                     {user ? "Go to Dashboard" : "Login / Register"}
                   </button>
                 </Link>
-                <a href="#creators">
+                <a href="/creators">
                   <button className="btn btn-ghost">Meet the creators</button>
                 </a>
               </div>
